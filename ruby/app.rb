@@ -303,6 +303,8 @@ class App < Sinatra::Base
     end
 
     if !avatar_name.nil? && !avatar_data.nil?
+      File.open("./icons/#{avatar_name}", "wb").write(data)
+      
       statement = db.prepare('INSERT INTO image (name, data) VALUES (?, ?)')
       statement.execute(avatar_name, avatar_data)
       statement.close
