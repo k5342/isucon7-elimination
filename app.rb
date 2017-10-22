@@ -1,8 +1,13 @@
 require 'digest/sha1'
 require 'mysql2'
 require 'sinatra/base'
+require 'rack-lineprof'
+require 'logger' # このrequire要らないかも
 
 class App < Sinatra::Base
+  logger = Logger.new('/var/log/lineprof.log')
+  use Rack::Lineprof, profile: 'app.rb', logger: logger # 基本的にはコメントアウトしておく
+
   configure do
     set :session_secret, 'tonymoris'
     set :public_folder, File.expand_path('../../public', __FILE__)
