@@ -1,6 +1,8 @@
 require 'digest/sha1'
 require 'mysql2'
 require 'sinatra/base'
+require 'redis'
+require 'redis/connection/hiredis'
 
 class App < Sinatra::Base
   configure do
@@ -30,6 +32,23 @@ class App < Sinatra::Base
       end
 
       @_user
+    end
+
+    def redis
+      Redis.current
+    end
+
+    # メソッドでkeyを取得できるようにする
+    def redis_key_channel_message(channel_id, message_id)
+      "isu7:channel-#{channel_id}:message-#{message_id}"
+    end
+
+    def redis_key_channel_ids(channel_id)
+      "isu7:channel_ids:#{channel_id}"
+    end
+
+    def redis_key_last_message_id
+      "isu7:last_message_id"
     end
   end
 
@@ -359,10 +378,18 @@ class App < Sinatra::Base
   end
 
   def db_add_message(channel_id, user_id, content)
-    statement = db.prepare('INSERT INTO message (channel_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())')
-    messages = statement.execute(channel_id, user_id, content)
-    statement.close
-    messages
+    last_message_id = redis.get(redis_key_last_message_id) + 1
+
+    redis.set(redis_key_last_message_id, last_message_id)
+    redis.hmset(
+      redis.get(redis_key_message(last_message_id)),
+      {channel_id: channel_id, user_id: user_id, content: content, created_at: Time.now}
+    )
+
+    #statement = db.prepare('INSERT INTO message (channel_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())')
+    #messages = statement.execute(channel_id, user_id, content)
+    #statement.close
+    #messages
   end
 
   def random_string(n)
