@@ -33,7 +33,8 @@ db.xquery('SELECT * FROM message').each_slice(10000).with_index do |slice, idx|
 
     messages.each do |hash|
       Redis.current.hmset(
-        "isu7:channel-#{hash[:channel_id]}:message-#{hash[:id]}",
+        "isu7:message-#{hash[:id]}",
+        :channel_id, hash[:channel_id],
         :user_id, hash[:user_id],
         :content, hash[:content],
         :created_at, hash[:created_at]
@@ -46,4 +47,3 @@ db.xquery('SELECT * FROM message').each_slice(10000).with_index do |slice, idx|
     end
     puts " * messages:#{idx}"
 end
-

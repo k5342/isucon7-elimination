@@ -39,8 +39,8 @@ class App < Sinatra::Base
     end
 
     # メソッドでkeyを取得できるようにする
-    def redis_key_channel_message(channel_id, message_id)
-      "isu7:channel-#{channel_id}:message-#{message_id}"
+    def redis_key_message(message_id)
+      "isu7:message-#{message_id}"
     end
 
     def redis_key_channel_ids(channel_id)
@@ -137,19 +137,36 @@ class App < Sinatra::Base
 
     channel_id = params[:channel_id].to_i
     last_message_id = params[:last_message_id].to_i
-    statement = db.prepare('SELECT * FROM message WHERE id > ? AND channel_id = ? ORDER BY id DESC LIMIT 100')
-    rows = statement.execute(last_message_id, channel_id).to_a
+
+    message_ids = redis.current.hmget(redis_key_channel_ids(channel_id))
+    message_ids.select { |id| id  > last_message_id }.sort.reverse.slice(0,99)
+
     response = []
-    rows.each do |row|
+    message_ids.each do |id|
+      message = redis.hmget(redis_key_message(id))
       r = {}
-      r['id'] = row['id']
+      r['id'] = id
       statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
-      r['user'] = statement.execute(row['user_id']).first
-      r['date'] = row['created_at'].strftime("%Y/%m/%d %H:%M:%S")
-      r['content'] = row['content']
+      r['user'] = statement.execute(message[:user_id]).first
+      r['date'] = message[:created_at].strftime("%Y/%m/%d %H:%M:%S")
+      r['content'] = message[:content]
       response << r
       statement.close
     end
+
+    # statement = db.prepare('SELECT * FROM message WHERE id > ? AND channel_id = ? ORDER BY id DESC LIMIT 100')
+    # rows = statement.execute(last_message_id, channel_id).to_a
+    # response = []
+    # rows.each do |row|
+    #   r = {}
+    #   r['id'] = row['id']
+    #   statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
+    #   r['user'] = statement.execute(row['user_id']).first
+    #   r['date'] = row['created_at'].strftime("%Y/%m/%d %H:%M:%S")
+    #   r['content'] = row['content']
+    #   response << r
+    #   statement.close
+    # end
     response.reverse!
 
     max_message_id = rows.empty? ? 0 : rows.map { |row| row['id'] }.max
@@ -183,11 +200,17 @@ class App < Sinatra::Base
       r = {}
       r['channel_id'] = channel_id
       r['unread'] = if row.nil?
-        statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?')
-        statement.execute(channel_id).first['cnt']
+        message_ids = redis.lrange(redis_key_channel_ids(channel_id), 0, -1)
+        message_ids.size
+
+        # statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?')
+        # statement.execute(channel_id).first['cnt']
       else
-        statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id')
-        statement.execute(channel_id, row['message_id']).first['cnt']
+        message_ids = redis.lrange(redis_key_channel_ids(channel_id), 0, -1)
+        message_ids.select { |id| id > row['message_id'] }.size
+
+        # statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id')
+        # statement.execute(channel_id, row['message_id']).first['cnt']
       end
       statement.close
       res << r
@@ -214,24 +237,42 @@ class App < Sinatra::Base
     @page = @page.to_i
 
     n = 20
-    statement = db.prepare('SELECT * FROM message WHERE channel_id = ? ORDER BY id DESC LIMIT ? OFFSET ?')
-    rows = statement.execute(@channel_id, n, (@page - 1) * n).to_a
-    statement.close
+
+    message_ids = redis.lrange(redis_key_channel_ids(@channel_id), 0, -1)
+    ids = message_ids.sort.reverse.slice(((@page - 1) * n)..(@page*n))
+
     @messages = []
-    rows.each do |row|
+    ids.each do |id|
+      message = redis.hmget(redis_key_message(id))
       r = {}
-      r['id'] = row['id']
+      r['id'] = id
       statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
-      r['user'] = statement.execute(row['user_id']).first
-      r['date'] = row['created_at'].strftime("%Y/%m/%d %H:%M:%S")
-      r['content'] = row['content']
+      r['user'] = statement.execute(msg[:user_id]).first
+      r['date'] = msg[:created_at].strftime("%Y/%m/%d %H:%M:%S")
+      r['content'] = msg[:content]
       @messages << r
       statement.close
     end
+
+    # statement = db.prepare('SELECT * FROM message WHERE channel_id = ? ORDER BY id DESC LIMIT ? OFFSET ?')
+    # rows = statement.execute(@channel_id, n, (@page - 1) * n).to_a
+    # statement.close
+    # @messages = []
+    # messages.each do |msg|
+    #   r = {}
+    #   r['id'] = msg['id']
+    #   statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
+    #   r['user'] = statement.execute(msg['user_id']).first
+    #   r['date'] = msg['created_at'].strftime("%Y/%m/%d %H:%M:%S")
+    #   r['content'] = msg['content']
+    #   @messages << r
+    #   statement.close
+    # end
     @messages.reverse!
 
-    statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?')
-    cnt = statement.execute(@channel_id).first['cnt'].to_f
+    # statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?')
+    # cnt = statement.execute(@channel_id).first['cnt'].to_f
+    cnt = message_ids.size.to_f
     statement.close
     @max_page = cnt == 0 ? 1 :(cnt / n).ceil
 
@@ -383,7 +424,9 @@ class App < Sinatra::Base
     redis.set(redis_key_last_message_id, last_message_id)
     redis.hmset(
       redis.get(redis_key_message(last_message_id)),
-      {channel_id: channel_id, user_id: user_id, content: content, created_at: Time.now}
+      :user_id, user_id,
+      :content, content, 
+      :created_at, Time.now
     )
 
     #statement = db.prepare('INSERT INTO message (channel_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())')
