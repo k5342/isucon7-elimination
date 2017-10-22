@@ -230,7 +230,7 @@ class App < Sinatra::Base
     @channels, = get_channel_list_info
 
     user_name = params[:user_name]
-    statement = db.prepare('SELECT id FROM user WHERE name = ?')
+    statement = db.prepare('SELECT * FROM user WHERE name = ?')
     @user = statement.execute(user_name).first
     statement.close
 
@@ -342,8 +342,8 @@ class App < Sinatra::Base
     @db_client = Mysql2::Client.new(
       host: ENV.fetch('ISUBATA_DB_HOST') { 'localhost' },
       port: ENV.fetch('ISUBATA_DB_PORT') { '3306' },
-      username: ENV.fetch('ISUBATA_DB_USER') { 'root' },
-      password: ENV.fetch('ISUBATA_DB_PASSWORD') { '' },
+      username: ENV.fetch('ISUBATA_DB_USER') { 'isucon' },
+      password: ENV.fetch('ISUBATA_DB_PASSWORD') { 'isucon' },
       database: 'isubata',
       encoding: 'utf8mb4'
     )
