@@ -342,8 +342,8 @@ class App < Sinatra::Base
     @db_client = Mysql2::Client.new(
       host: ENV.fetch('ISUBATA_DB_HOST') { 'localhost' },
       port: ENV.fetch('ISUBATA_DB_PORT') { '3306' },
-      username: ENV.fetch('ISUBATA_DB_USER') { 'isucon' },
-      password: ENV.fetch('ISUBATA_DB_PASSWORD') { 'isucon' },
+      username: ENV.fetch('ISUBATA_DB_USER') { 'root' },
+      password: ENV.fetch('ISUBATA_DB_PASSWORD') { '' },
       database: 'isubata',
       encoding: 'utf8mb4'
     )
