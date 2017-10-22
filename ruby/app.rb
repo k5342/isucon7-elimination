@@ -340,8 +340,9 @@ class App < Sinatra::Base
     return @db_client if defined?(@db_client)
 
     @db_client = Mysql2::Client.new(
-      host: ENV.fetch('ISUBATA_DB_HOST') { 'localhost' },
-      port: ENV.fetch('ISUBATA_DB_PORT') { '3306' },
+#      host: ENV.fetch('ISUBATA_DB_HOST') { 'localhost' },
+#      port: ENV.fetch('ISUBATA_DB_PORT') { '3306' },
+      socket: '/run/mysqld/mysqld.sock',
       username: ENV.fetch('ISUBATA_DB_USER') { 'root' },
       password: ENV.fetch('ISUBATA_DB_PASSWORD') { '' },
       database: 'isubata',
