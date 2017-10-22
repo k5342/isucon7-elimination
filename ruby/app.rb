@@ -3,6 +3,7 @@ require 'mysql2'
 require 'sinatra/base'
 require 'redis'
 require 'redis/connection/hiredis'
+# require 'pry'
 
 class App < Sinatra::Base
   configure do
@@ -138,18 +139,20 @@ class App < Sinatra::Base
     channel_id = params[:channel_id].to_i
     last_message_id = params[:last_message_id].to_i
 
-    message_ids = redis.current.hmget(redis_key_channel_ids(channel_id))
-    message_ids.select { |id| id  > last_message_id }.sort.reverse.slice(0,99)
+    message_ids = redis.lrange(redis_key_channel_ids(channel_id), 0, -1)
+                       .map(&:to_i)
+                       .select { |id| id > last_message_id }
+                       .sort.reverse.slice(0,99)
 
     response = []
     message_ids.each do |id|
-      message = redis.hmget(redis_key_message(id))
+      message = redis.hgetall(redis_key_message(id))
       r = {}
       r['id'] = id
       statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
-      r['user'] = statement.execute(message[:user_id]).first
-      r['date'] = message[:created_at].strftime("%Y/%m/%d %H:%M:%S")
-      r['content'] = message[:content]
+      r['user'] = statement.execute(message['user_id']).first
+      r['date'] = Time.strptime(message['created_at'], "%Y-%m-%d %H:%M:%S %z").strftime("%Y/%m/%d %H:%M:%S")
+      r['content'] = message['content']
       response << r
       statement.close
     end
@@ -169,14 +172,15 @@ class App < Sinatra::Base
     # end
     response.reverse!
 
-    max_message_id = rows.empty? ? 0 : rows.map { |row| row['id'] }.max
+    max_message_id = message_ids.empty? ? 0 : message_ids.max
     statement = db.prepare([
       'INSERT INTO haveread (user_id, channel_id, message_id, updated_at, created_at) ',
       'VALUES (?, ?, ?, NOW(), NOW()) ',
       'ON DUPLICATE KEY UPDATE message_id = ?, updated_at = NOW()',
     ].join)
     statement.execute(user_id, channel_id, max_message_id, max_message_id)
-
+    statement.close
+    
     content_type :json
     response.to_json
   end
@@ -207,12 +211,12 @@ class App < Sinatra::Base
         # statement.execute(channel_id).first['cnt']
       else
         message_ids = redis.lrange(redis_key_channel_ids(channel_id), 0, -1)
-        message_ids.select { |id| id > row['message_id'] }.size
+        message_ids.map(&:to_i).select { |id| id > row['message_id'] }.size
 
         # statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id')
         # statement.execute(channel_id, row['message_id']).first['cnt']
       end
-      statement.close
+      #statement.close
       res << r
     end
 
@@ -243,13 +247,13 @@ class App < Sinatra::Base
 
     @messages = []
     ids.each do |id|
-      message = redis.hmget(redis_key_message(id))
+      message = redis.hgetall(redis_key_message(id))
       r = {}
       r['id'] = id
       statement = db.prepare('SELECT name, display_name, avatar_icon FROM user WHERE id = ?')
-      r['user'] = statement.execute(msg[:user_id]).first
-      r['date'] = msg[:created_at].strftime("%Y/%m/%d %H:%M:%S")
-      r['content'] = msg[:content]
+      r['user'] = statement.execute(msg['user_id']).first
+      r['date'] = msg['created_at'].strftime("%Y/%m/%d %H:%M:%S")
+      r['content'] = msg['content']
       @messages << r
       statement.close
     end
@@ -273,7 +277,7 @@ class App < Sinatra::Base
     # statement = db.prepare('SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?')
     # cnt = statement.execute(@channel_id).first['cnt'].to_f
     cnt = message_ids.size.to_f
-    statement.close
+    #statement.close
     @max_page = cnt == 0 ? 1 :(cnt / n).ceil
 
     return 400 if @page > @max_page
@@ -402,8 +406,8 @@ class App < Sinatra::Base
     @db_client = Mysql2::Client.new(
       host: ENV.fetch('ISUBATA_DB_HOST') { 'localhost' },
       port: ENV.fetch('ISUBATA_DB_PORT') { '3306' },
-      username: ENV.fetch('ISUBATA_DB_USER') { 'root' },
-      password: ENV.fetch('ISUBATA_DB_PASSWORD') { '' },
+      username: ENV.fetch('ISUBATA_DB_USER') { 'isucon' },
+      password: ENV.fetch('ISUBATA_DB_PASSWORD') { 'isucon' },
       database: 'isubata',
       encoding: 'utf8mb4'
     )
